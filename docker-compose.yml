@@ -1,0 +1,57 @@
+version: '3'
+services:
+  metadata:
+    image: metadata_base:latest
+    build: ./metadata_base/
+    ports:
+      - "5432:5432"
+  redis:
+    container_name: redis
+    image: redis:alpine
+    command: ["redis-server"]
+    volumes:
+      - ./redis:/data
+    ports:
+      - "6379:6379"
+
+  nginx:
+    image: front:latest 
+    build: ./front/
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    ports:
+      - "443:443" 
+      - "80:80"
+    volumes:
+      - ./front/nginx:/etc/nginx/conf.d
+      - ./front/certbot/conf:/etc/letsencrypt
+      - ./front/certbot/www:/var/www/certbot
+    depends_on:
+      - go
+  go:
+     image: goback:latest
+     build: ./goback
+     command: "/app/goback"
+     ports:
+       - "8090:8090"
+     volumes:
+       - /data/:/data/
+     environment:
+       REDIS_DATABASE_URL: "redis:6379"
+       CPP_ROUTE: "http://cppback:9090/get_similar"
+       UPLOADED_DIR_PATH: "/data/uploaded"
+       POSTGRESQL_DATABASE_URL: "postgres://docker:dockerpass@metadata/metadata"
+       AUDIO_DIR_PATH: "/data/maestro-v2.0.0/"  
+  cppback:
+    image: cppback:latest
+    build: ./cppback
+    command: "/app/main"
+    ports:
+      - "9090:9090"
+    volumes:
+      - /data/:/data/
+  certbot:
+    image: certbot/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    volumes:
+      - ./front/certbot/conf:/etc/letsencrypt
+      - ./front/certbot/www:/var/www/certbot
